@@ -189,6 +189,10 @@ static bool CompareVersionReleaseGT(const std::string &version1, const std::stri
     return false;
 }
 
+// Populates o_Result with packages that are present in branch1 and
+// not present in branch2 (array name is pLabel). Optionally, adds
+// a record about packages where version-release in branch1
+// is greater than in branch2 (array name is vrLabel)
 void FirstNotSecond(const ArchToNamesToInfo &b1, const ArchToNamesToInfo &b2,
                     const std::string &pLabel, nlohmann::json &o_Result,
                     bool checkVersionRelease, const std::string &vrLabel) {
