@@ -12,7 +12,7 @@ static char errorBuffer[CURL_ERROR_SIZE];
 static std::string buffer;
  
 //  libcurl write callback function
-static int writer(char *data, size_t size, size_t nmemb,
+static int CurlWriter(char *data, size_t size, size_t nmemb,
                   std::string *writerData) {
     if (writerData == NULL)
         return 0;
@@ -22,7 +22,7 @@ static int writer(char *data, size_t size, size_t nmemb,
     return size * nmemb;
 }
 
-static bool initCurlEasy(CURL *&conn, const char *url) {
+static bool CurlEasyInit(CURL *&conn, const char *url) {
     CURLcode code;
  
     conn = curl_easy_init();
@@ -50,7 +50,7 @@ static bool initCurlEasy(CURL *&conn, const char *url) {
         return false;
     }
  
-    code = curl_easy_setopt(conn, CURLOPT_WRITEFUNCTION, writer);
+    code = curl_easy_setopt(conn, CURLOPT_WRITEFUNCTION, CurlWriter);
     if (code != CURLE_OK) {
         std::cerr << "Failed to set writer [" << errorBuffer << "]\n"; 
         return false;
@@ -67,7 +67,7 @@ static bool initCurlEasy(CURL *&conn, const char *url) {
 
 // API call to /export/branch_binary_packages/{branch}
 // with optional argument `arch`
-static nlohmann::json branchBinaryPackages(const std::string &branch, const std::string &arch = "") {
+static nlohmann::json BranchBinaryPackages(const std::string &branch, const std::string &arch = "") {
     CURL *conn = NULL;
     CURLcode code;
     std::string url = "https://rdb.altlinux.org/api/export/branch_binary_packages/" + branch;
@@ -78,7 +78,7 @@ static nlohmann::json branchBinaryPackages(const std::string &branch, const std:
     curl_global_init(CURL_GLOBAL_DEFAULT);
 
     // Initialize CURL connection
-    if (!initCurlEasy(conn, url.data())) {
+    if (!CurlEasyInit(conn, url.data())) {
         std::cerr << "Connection initializion failed\n";
         exit(EXIT_FAILURE);
     }
@@ -104,7 +104,7 @@ static nlohmann::json branchBinaryPackages(const std::string &branch, const std:
 // API call to a dictionary where each architecture maps to a dictionary from
 // package names built for this architecture to their respective information.
 static std::unordered_map<std::string, std::unordered_map<std::string, nlohmann::json>>
-json2Map(const nlohmann::json &data) {
+Json2Map(const nlohmann::json &data) {
     std::unordered_map<std::string, std::unordered_map<std::string, nlohmann::json>> archToNamesToInfo;
     for (const nlohmann::json &packageInfo : data["packages"]) {
         archToNamesToInfo[packageInfo["arch"]][packageInfo["name"]] = packageInfo;
@@ -203,11 +203,11 @@ int main(int argc, char *argv[]) {
     std::string branch1(argv[1]);
     std::string branch2(argv[2]);
 
-    nlohmann::json data = branchBinaryPackages(branch1);
-    auto b1ArchToNamesToInfo = json2Map(data);
+    nlohmann::json data = BranchBinaryPackages(branch1);
+    auto b1ArchToNamesToInfo = Json2Map(data);
 
-    data = branchBinaryPackages(branch2);
-    auto b2ArchToNamesToInfo = json2Map(data);
+    data = BranchBinaryPackages(branch2);
+    auto b2ArchToNamesToInfo = Json2Map(data);
 
     data.clear();
 
