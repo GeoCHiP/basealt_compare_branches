@@ -100,12 +100,13 @@ static nlohmann::json BranchBinaryPackages(const std::string &branch, const std:
     return json;
 }
 
+using ArchToNamesToInfo = std::unordered_map<std::string, std::unordered_map<std::string, nlohmann::json>>;
+
 // Function to convert the result of /export/branch_binary_packages/{branch}
 // API call to a dictionary where each architecture maps to a dictionary from
 // package names built for this architecture to their respective information.
-static std::unordered_map<std::string, std::unordered_map<std::string, nlohmann::json>>
-Json2Map(const nlohmann::json &data) {
-    std::unordered_map<std::string, std::unordered_map<std::string, nlohmann::json>> archToNamesToInfo;
+static ArchToNamesToInfo Json2Map(const nlohmann::json &data) {
+    ArchToNamesToInfo archToNamesToInfo;
     for (const nlohmann::json &packageInfo : data["packages"]) {
         archToNamesToInfo[packageInfo["arch"]][packageInfo["name"]] = packageInfo;
     }
@@ -191,6 +192,37 @@ static bool CompareVersionReleaseGT(const std::string &version1, const std::stri
     return false;
 }
 
+static void FirstNotSecond(const ArchToNamesToInfo &b1,
+                           const ArchToNamesToInfo &b2,
+                           const std::string &pLabel,
+                           nlohmann::json &o_Result,
+                           bool checkVersionRelease = false,
+                           const std::string &vrLabel = "version-release_greater_first") {
+    for (const auto &[arch, namesToInfo] : b1) {
+        // Check if architecture is present in branch1 and not in branch2.
+        if (b2.find(arch) == b2.end()) {
+            for (const auto &[pName, pInfo] : namesToInfo) {
+                o_Result[arch][pLabel].push_back(pInfo);
+            }
+            continue;
+        }
+
+        for (const auto &[pName, pInfo] : namesToInfo) {
+            auto b2It = b2.at(arch).find(pName);
+            // Check for packages that are only present in branch1.
+            if (b2It == b2.at(arch).end()) {
+                o_Result[arch][pLabel].push_back(pInfo);
+            } else if (checkVersionRelease) {
+                // Check if version-release in branch1 is greater than in branch2.
+                if (CompareVersionReleaseGT(pInfo["version"], pInfo["release"],
+                                            b2It->second["version"], b2It->second["release"])) {
+                    o_Result[arch][vrLabel].push_back(pInfo);
+                }
+            }
+        }
+    }
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 3) {
         std::cout << "Usage:\n";
@@ -213,47 +245,8 @@ int main(int argc, char *argv[]) {
 
     nlohmann::json result;
 
-    // TODO: Move this code into a function to avoid code repetition
-    for (const auto &[arch, namesToInfo] : b1ArchToNamesToInfo) {
-        // Check if architecture is present in branch1 and not in branch2.
-        if (b2ArchToNamesToInfo.find(arch) == b2ArchToNamesToInfo.end()) {
-            for (const auto &[pName, pInfo] : namesToInfo) {
-                result[arch]["first_not_second"].push_back(pInfo);
-            }
-            continue;
-        }
-
-        for (const auto &[pName, pInfo] : namesToInfo) {
-            auto b2It = b2ArchToNamesToInfo[arch].find(pName);
-            // Check for packages that are only present in branch1.
-            if (b2It == b2ArchToNamesToInfo[arch].end()) {
-                result[arch]["first_not_second"].push_back(pInfo);
-            } else {
-                // Check if version-release in branch1 is greater than in branch2.
-                if (CompareVersionReleaseGT(pInfo["version"], pInfo["release"],
-                                            b2It->second["version"], b2It->second["release"])) {
-                    result[arch]["version-release_greter_first"].push_back(pInfo);
-                }
-            }
-        }
-    }
-
-    for (const auto &[arch, namesToInfo] : b2ArchToNamesToInfo) {
-        // Check if architecture is present in branch2 and not in branch1.
-        if (b1ArchToNamesToInfo.find(arch) == b1ArchToNamesToInfo.end()) {
-            for (const auto &[pName, pInfo] : namesToInfo) {
-                result[arch]["second_not_first"].push_back(pInfo);
-            }
-            continue;
-        }
-
-        for (const auto &[pName, pInfo] : namesToInfo) {
-            // Check for packages that are only present in branch2
-            if (b1ArchToNamesToInfo[arch].find(pName) == b1ArchToNamesToInfo[arch].end()) {
-                result[arch]["second_not_first"].push_back(pInfo);
-            }
-        }
-    }
+    FirstNotSecond(b1ArchToNamesToInfo, b2ArchToNamesToInfo, "first_not_second", result, true);
+    FirstNotSecond(b2ArchToNamesToInfo, b1ArchToNamesToInfo, "second_not_first", result);
 
     std::ofstream outFile("comparison_" + branch1 + '_' + branch2 + ".json");
     outFile << std::setw(4) << result;
