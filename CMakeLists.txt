@@ -4,11 +4,15 @@ project(compare_branches)
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_executable(compare_branches main.cpp)
+set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/bin)
+set(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR}/lib)
 
 find_package(CURL REQUIRED)
 
-include_directories(${CURL_INCLUDE_DIRS})
+add_library(branch_operations SHARED branch_operations.cpp)
+target_include_directories(branch_operations PRIVATE ${CURL_INCLUDE_DIRS})
+target_link_libraries(branch_operations ${CURL_LIBRARIES})
 
-target_link_libraries(compare_branches ${CURL_LIBRARIES})
+add_executable(compare_branches main.cpp)
+target_link_libraries(compare_branches branch_operations)
 
