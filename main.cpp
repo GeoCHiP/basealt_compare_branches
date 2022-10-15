@@ -1,8 +1,11 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <unordered_map>
 
 #include <curl/curl.h>
+
+#include "vendor/json/json.hpp"
 
 //  libcurl variables for error strings and returned data
 static char errorBuffer[CURL_ERROR_SIZE];
@@ -62,15 +65,20 @@ static bool initCurlEasy(CURL *&conn, const char *url) {
     return true;
 }
 
-int main() {
+// API call to /export/branch_binary_packages/{branch}
+// with optional argument `arch`
+static nlohmann::json branchBinaryPackages(const std::string &branch, const std::string &arch = "") {
     CURL *conn = NULL;
     CURLcode code;
-    const char *url = "https://rdb.altlinux.org/api/export/branch_binary_packages/sisyphus";
+    std::string url = "https://rdb.altlinux.org/api/export/branch_binary_packages/" + branch;
+    if (!arch.empty()) {
+        url += "?arch=" + arch;
+    }
 
     curl_global_init(CURL_GLOBAL_DEFAULT);
 
     // Initialize CURL connection
-    if (!initCurlEasy(conn, url)) {
+    if (!initCurlEasy(conn, url.data())) {
         std::cerr << "Connection initializion failed\n";
         exit(EXIT_FAILURE);
     }
@@ -84,9 +92,91 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    std::ofstream outFile("sisyphus_packages.json");
-    outFile << buffer;
+    nlohmann::json json = nlohmann::json::parse(buffer);
+    buffer.clear();
 
     curl_global_cleanup();
+
+    return json;
+}
+
+// Function to convert the result of /export/branch_binary_packages/{branch}
+// API call to a dictionary where each architecture maps to a dictionary from
+// package names built for this architecture to their respective information.
+static std::unordered_map<std::string, std::unordered_map<std::string, nlohmann::json>>
+json2Map(const nlohmann::json &data) {
+    std::unordered_map<std::string, std::unordered_map<std::string, nlohmann::json>> archToNamesToInfo;
+    for (const nlohmann::json &packageInfo : data["packages"]) {
+        archToNamesToInfo[packageInfo["arch"]][packageInfo["name"]] = packageInfo;
+    }
+    return archToNamesToInfo;
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 3) {
+        std::cout << "Usage:\n";
+        std::cout << argv[0] << " branch1 branch2\n";
+        std::cout << "branch1\t- Name of the first branch.\n";
+        std::cout << "branch2\t- name of the second branch.\n";
+        exit(EXIT_FAILURE);
+    }
+
+    std::string branch1(argv[1]);
+    std::string branch2(argv[2]);
+
+    nlohmann::json data = branchBinaryPackages(branch1);
+    auto b1ArchToNamesToInfo = json2Map(data);
+
+    data = branchBinaryPackages(branch2);
+    auto b2ArchToNamesToInfo = json2Map(data);
+
+    data.clear();
+
+    nlohmann::json result;
+
+    for (const auto &[arch, namesToInfo] : b1ArchToNamesToInfo) {
+        // Check if architecture is present in branch1 and not in branch2.
+        if (b2ArchToNamesToInfo.find(arch) == b2ArchToNamesToInfo.end()) {
+            for (const auto &[pName, pInfo] : namesToInfo) {
+                result[arch]["first_not_second"].push_back(pInfo);
+            }
+            continue;
+        }
+
+        for (const auto &[pName, pInfo] : namesToInfo) {
+            auto b2It = b2ArchToNamesToInfo[arch].find(pName);
+            // Check for packages that are only present in branch1.
+            if (b2It == b2ArchToNamesToInfo[arch].end()) {
+                result[arch]["first_not_second"].push_back(pInfo);
+            } else {
+                // Check if version-release in branch1 is greater than in branch2.
+                std::string first = std::string(pInfo["version"]) + '-' + std::string(pInfo["release"]);
+                std::string second = std::string(b2It->second["version"]) + '-' + std::string(b2It->second["release"]);
+                if (first > second) {
+                    result[arch]["version-release_greter_first"].push_back(pInfo);
+                }
+            }
+        }
+    }
+
+    for (const auto &[arch, namesToInfo] : b2ArchToNamesToInfo) {
+        // Check if architecture is present in branch2 and not in branch1.
+        if (b1ArchToNamesToInfo.find(arch) == b1ArchToNamesToInfo.end()) {
+            for (const auto &[pName, pInfo] : namesToInfo) {
+                result[arch]["second_not_first"].push_back(pInfo);
+            }
+            continue;
+        }
+
+        for (const auto &[pName, pInfo] : namesToInfo) {
+            // Check for packages that are only present in branch2
+            if (b1ArchToNamesToInfo[arch].find(pName) == b1ArchToNamesToInfo[arch].end()) {
+                result[arch]["second_not_first"].push_back(pInfo);
+            }
+        }
+    }
+
+    std::ofstream outFile("comparison_" + branch1 + '_' + branch2 + ".json");
+    outFile << std::setw(4) << result;
 }
 
