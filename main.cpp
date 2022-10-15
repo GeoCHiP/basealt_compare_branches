@@ -112,6 +112,85 @@ json2Map(const nlohmann::json &data) {
     return archToNamesToInfo;
 }
 
+enum class Cmp {
+    LessThan = -1,
+    Equal = 0,
+    GreaterThan = 1
+};
+
+static Cmp CompareVersionParts(const std::string &versionPartStr1,
+                               const std::string &versionPartStr2) {
+    int versionPartInt1 = -1;
+    int versionPartInt2 = -1;
+
+    try {
+        versionPartInt1 = std::stoi(versionPartStr1);
+        versionPartInt2 = std::stoi(versionPartStr2);
+    } catch (const std::invalid_argument &e) {
+        // Version parts contain non-numeric characters
+        // => compare strings
+        if (versionPartStr1 > versionPartStr2) {
+            return Cmp::GreaterThan;
+        } else if (versionPartStr1 < versionPartStr2) {
+            return Cmp::LessThan;
+        } else {
+            return Cmp::Equal;
+        }
+    }
+
+    // No exceptions occured => only numeric characters
+    // => compare integers
+    if (versionPartInt1 > versionPartInt2) {
+        return Cmp::GreaterThan;
+    } else if (versionPartInt1 < versionPartInt2) {
+        return Cmp::LessThan;
+    } else {
+        return Cmp::Equal;
+    }
+}
+
+static bool CompareVersionReleaseGT(const std::string &version1, const std::string &release1,
+                                    const std::string &version2, const std::string &release2) {
+    size_t last1 = 0;
+    size_t last2 = 0;
+    size_t next1 = 0;
+    size_t next2 = 0;
+
+    // Compare every part of Major.Minor.Patch scheme
+    while ((next1 = version1.find('.', last1)) != std::string::npos &&
+           (next2 = version2.find('.', last2)) != std::string::npos) {
+        Cmp cmpResult = CompareVersionParts(version1.substr(last1, next1 - last1),
+                                            version2.substr(last2, next2 - last2));
+
+        switch (cmpResult) {
+            case Cmp::GreaterThan:
+                return true;
+            case Cmp::LessThan:
+                return false;
+        }
+
+        last1 = next1 + 1;
+        last2 = next2 + 1;
+    }
+
+    // Handle edge case (Patch in the pattern Major.Minor.Patch)
+    Cmp cmpResult = CompareVersionParts(version1.substr(last1), version2.substr(last2));
+
+    switch (cmpResult) {
+        case Cmp::GreaterThan:
+            return true;
+        case Cmp::LessThan:
+            return false;
+    }
+
+    // Versions are equal, compare release info
+    if (release1 > release2) {
+        return true;
+    }
+
+    return false;
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 3) {
         std::cout << "Usage:\n";
@@ -134,6 +213,7 @@ int main(int argc, char *argv[]) {
 
     nlohmann::json result;
 
+    // TODO: Move this code into a function to avoid code repetition
     for (const auto &[arch, namesToInfo] : b1ArchToNamesToInfo) {
         // Check if architecture is present in branch1 and not in branch2.
         if (b2ArchToNamesToInfo.find(arch) == b2ArchToNamesToInfo.end()) {
@@ -150,9 +230,8 @@ int main(int argc, char *argv[]) {
                 result[arch]["first_not_second"].push_back(pInfo);
             } else {
                 // Check if version-release in branch1 is greater than in branch2.
-                std::string first = std::string(pInfo["version"]) + '-' + std::string(pInfo["release"]);
-                std::string second = std::string(b2It->second["version"]) + '-' + std::string(b2It->second["release"]);
-                if (first > second) {
+                if (CompareVersionReleaseGT(pInfo["version"], pInfo["release"],
+                                            b2It->second["version"], b2It->second["release"])) {
                     result[arch]["version-release_greter_first"].push_back(pInfo);
                 }
             }
