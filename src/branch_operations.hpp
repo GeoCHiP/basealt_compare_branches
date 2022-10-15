@@ -1,4 +1,6 @@
-#include "vendor/json/json.hpp"
+#pragma once
+
+#include "json.hpp"
 
 using ArchToNamesToInfo = std::unordered_map<std::string, std::unordered_map<std::string, nlohmann::json>>;
 
