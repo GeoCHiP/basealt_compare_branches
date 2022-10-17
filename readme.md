@@ -35,6 +35,15 @@ cmake --build .
 ./compare_branches sisyphus p10
 ```
 
+# Installation
+
+To install the binary `compare_branches`, the shared library `libbranch_operations.so` and the header for the shared library `src/branch_operations.hpp`
+you need to change directory to `build/`, build the project and then execute this command:
+
+```
+sudo cmake --install . --prefix=/usr
+```
+
 ---
 
 Was tested on [alt-workstation-10.0-x86_64](http://ftp.altlinux.org/pub/distributions/ALTLinux/p10/images/workstation/x86_64/).
