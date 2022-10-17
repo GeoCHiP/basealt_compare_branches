@@ -9,7 +9,7 @@ The program takes in two arguments: `branch1` and `branch2`, outputs a file comp
 - gcc10-c++ (10.3.1)
 - cmake (3.20.5)
 - libcurl-devel (7.85.0)
-- nlohmann-json (3.10.4)
+- nlohmann-json-devel (3.10.4)
 
 # Build & Run
 
