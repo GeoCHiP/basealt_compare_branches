@@ -1,6 +1,10 @@
 #pragma once
 
-#include "json.hpp"
+#include <string>
+#include <unordered_map>
+
+#include <nlohmann/json.hpp>
+
 
 using ArchToNamesToInfo = std::unordered_map<std::string, std::unordered_map<std::string, nlohmann::json>>;
 
